@@ -1,100 +1,103 @@
 name: Docker Build and Push
-                                                                                                                                  
+
 on:
-  workflow_call:                                                                                                                                                                          
+  workflow_call:
     inputs:
-      registry:                                                                                                                                                                           
-        description: 'Docker registry hostname (e.g. europe-west6-docker.pkg.dev)'                                                                                                      
+      registry:
+        description: 'Docker registry hostname (e.g. europe-west6-docker.pkg.dev)'
         required: true
         type: string
-      registry_images:                                                                                                                                                                    
+      registry_images:
         description: 'Base path in the registry (e.g. europe-west6-docker.pkg.dev/my-project/my-repo)'
-        required: true                                                                                                                                                                    
-        type: string                                                                                                                                                                    
+        required: true
+        type: string
       image_name:
         description: 'Image name without tag (e.g. my-app)'
-        required: false                                                                                                                                                                   
+        required: false
         type: string
-        default: ${{ github.event.repository.name }}                                                                                                                                      
-      base_version:                                                                                                                                                                     
+        default: ${{ github.event.repository.name }}
+      base_version:
         description: 'Semantic version from the project file (e.g. 1.2.3). The nightly suffix is appended here.'
-        required: true                                                                                                                                                                    
+        required: true
         type: string
-      dockerfile:                                                                                                                                                                         
-        description: 'Path to the Dockerfile (e.g. Dockerfile.api)'                                                                                                                     
+      dockerfile:
+        description: 'Path to the Dockerfile (e.g. Dockerfile.api)'
         required: false
         type: string
         default: 'Dockerfile'
-      platforms:                                                                                                                                                                          
+      platforms:
         required: false
-        type: string                                                                                                                                                                      
-        default: 'linux/amd64,linux/arm64'                                                                                                                                              
+        type: string
+        default: 'linux/amd64,linux/arm64'
     secrets:
       workload_identity_provider:
         required: true
       service_account:
         required: true
-jobs:                                                                                                                                                                                     
+jobs:
   build:
-    runs-on: ubuntu-latest                                                                                                                                                                
-    permissions:                                                                                                                                                                        
+    runs-on: ubuntu-latest
+    permissions:
       contents: read
       packages: write
       id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Compute nightly tag                                                                                                                                                         
+      - name: Compute nightly tag
         id: nightly
-        run: |                                                                                                                                                                            
-          echo "tag=${{ inputs.base_version }}-$(date +'%Y%m%d')-snapshot" >> $GITHUB_OUTPUT                                                                                            
+        run: |
+          echo "tag=${{ inputs.base_version }}-$(date +'%Y%m%d')-snapshot" >> $GITHUB_OUTPUT
       - name: Install cosign
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0                                                                                                  
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
         with:
-          cosign-release: 'v2.2.4'                                                                                                                                                        
-                                                                                                                                                                                          
+          cosign-release: 'v2.2.4'
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0                                                                                                
-                                                                                                                                                                                          
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+
       - name: Authenticate with Google Cloud
-        id: auth                                                                                                                                                                          
-        uses: google-github-actions/auth@b7593ed2efd1c1617e1b0254da33b86225adb2a5 # 2.1.12                                                                                              
-        with:                                                                                                                                                                             
+        id: auth
+        uses: google-github-actions/auth@b7593ed2efd1c1617e1b0254da33b86225adb2a5 # 2.1.12
+        with:
           token_format: access_token
-          workload_identity_provider: ${{ secrets.workload_identity_provider }}                                                                                                           
-          service_account: ${{ secrets.service_account }}                                                                                                                               
+          workload_identity_provider: ${{ secrets.workload_identity_provider }}
+          service_account: ${{ secrets.service_account }}
           access_token_lifetime: 1200s
-      - name: Login to Google Artifact Registry                                                                                                                                           
+      - name: Login to Google Artifact Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0                                                                                                       
-        with:                                                                                                                                                                           
-          registry: ${{ inputs.registry }}                                                                                                                                                
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ${{ inputs.registry }}
           username: oauth2accesstoken
-          password: ${{ steps.auth.outputs.access_token }}                                                                                                                                
-                                                                                                                                                                                        
+          password: ${{ steps.auth.outputs.access_token }}
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
-        with:                                                                                                                                                                             
-          images: ${{ inputs.registry_images }}/${{ inputs.image_name }}
-                                                                                                                                                                                          
-      - name: Build and push Docker image                                                                                                                                               
-        id: build-and-push
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # 6.18.0                                                                                                  
         with:
-          context: .                                                                                                                                                                      
-          file: ${{ inputs.dockerfile }}                                                                                                                                                
-          push: ${{ github.event_name != 'pull_request' }}                                                                                                                                
-          tags: ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ steps.nightly.outputs.tag }}
-          labels: ${{ steps.meta.outputs.labels }}                                                                                                                                        
-          cache-from: type=gha                                                                                                                                                            
+          images: ${{ inputs.registry_images }}/${{ inputs.image_name }}
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # 6.18.0
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ steps.nightly.outputs.tag }}
+            ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ inputs.base_version }}-snapshot
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: ${{ inputs.platforms }}                                                                                                                                              
-                                                                                                                                                                                        
+          platforms: ${{ inputs.platforms }}
+
       - name: Sign the published Docker image
         if: ${{ github.event_name != 'pull_request' }}
-        env:                                                                                                                                                                              
-          TAGS: ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ steps.nightly.outputs.tag }}
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}                                                                                                                              
-        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}    
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: |
+          cosign sign --yes ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ steps.nightly.outputs.tag }}@${DIGEST}
+          cosign sign --yes ${{ inputs.registry_images }}/${{ inputs.image_name }}:${{ inputs.base_version }}-snapshot@${DIGEST}
